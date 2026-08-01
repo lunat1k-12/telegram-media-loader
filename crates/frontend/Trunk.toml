@@ -1,0 +1,15 @@
+[build]
+target = "index.html"
+# The backend serves this directory (FRONTEND_DIR, `dist/web` by default), so
+# the output lands next to the workspace `target/` rather than under the crate.
+dist = "../../dist/web"
+
+[watch]
+watch = ["src", "index.html", "../shared/src", "../../assets"]
+
+[serve]
+port = 8081
+# `trunk serve` runs the UI on its own port and forwards the API to the backend
+# started with `cargo run`, so the frontend can hot-reload against real data.
+[[proxy]]
+backend = "http://127.0.0.1:8080/api"

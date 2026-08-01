@@ -1,0 +1,26 @@
+[package]
+name = "backend"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "telegram-loader"
+path = "src/main.rs"
+
+[dependencies]
+shared.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+log.workspace = true
+
+# `rustls` instead of the default `native-tls`: no OpenSSL, so the Linux build is
+# a single static binary that runs on any distro. See README.md.
+teloxide = { version = "0.17.0", default-features = false, features = ["macros", "rustls", "ctrlc_handler"] }
+pretty_env_logger = "0.5"
+tokio = { version = "1.39", features = ["rt-multi-thread", "macros", "fs", "io-util", "signal"] }
+axum = { version = "0.8", features = ["multipart", "http2"] }
+tower = { version = "0.5", features = ["util"] }
+tower-http = { version = "0.6", features = ["fs", "cors", "trace", "set-header", "compression-gzip", "compression-br"] }
+mime_guess = "2"
+futures-util = "0.3"
