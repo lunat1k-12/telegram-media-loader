@@ -1,0 +1,4 @@
+# Matches the layout the existing bot code was written in: wide lines, and
+# short bodies kept on one line.
+max_width = 120
+use_small_heuristics = "Max"

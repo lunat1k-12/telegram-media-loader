@@ -1,0 +1,39 @@
+[package]
+name = "frontend"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# A wasm32 target only — build it with `trunk build`, never with a bare
+# `cargo build` (the workspace `default-members` leaves it out for that reason).
+[dependencies]
+shared.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+leptos = { version = "0.8", features = ["csr"] }
+gloo-net = { version = "0.6", features = ["http", "json"] }
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
+console_error_panic_hook = "0.1"
+
+[dependencies.web-sys]
+version = "0.3"
+features = [
+    "DataTransfer",
+    "DragEvent",
+    "Element",
+    "File",
+    "FileList",
+    "FormData",
+    "History",
+    "HtmlElement",
+    "HtmlInputElement",
+    "HtmlSelectElement",
+    "KeyboardEvent",
+    "Location",
+    "Url",
+    "UrlSearchParams",
+    "Window",
+]

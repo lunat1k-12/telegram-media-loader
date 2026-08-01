@@ -1,0 +1,30 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/frontend",
+    "crates/backend",
+    "crates/shared",
+]
+# The frontend only compiles for wasm32, so a bare `cargo build` in the workspace
+# root must skip it. Build it with `trunk build` inside crates/frontend instead.
+default-members = [
+    "crates/backend",
+    "crates/shared",
+]
+
+[workspace.package]
+version = "0.2.0"
+edition = "2024"
+license = "MIT"
+
+[workspace.dependencies]
+shared = { path = "crates/shared" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+log = "0.4"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = true

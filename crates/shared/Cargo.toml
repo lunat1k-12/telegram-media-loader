@@ -1,0 +1,10 @@
+[package]
+name = "shared"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# Compiled for both the native backend and the wasm frontend, so the dependency
+# list stays deliberately tiny — serde and nothing else.
+[dependencies]
+serde.workspace = true
