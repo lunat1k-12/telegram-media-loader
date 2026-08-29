@@ -33,7 +33,11 @@ features = [
     "HtmlSelectElement",
     "KeyboardEvent",
     "Location",
+    "ProgressEvent",
     "Url",
     "UrlSearchParams",
     "Window",
+    "XmlHttpRequest",
+    "XmlHttpRequestEventTarget",
+    "XmlHttpRequestUpload",
 ]

@@ -70,6 +70,29 @@ impl Query {
     }
 }
 
+/// How far the in-flight upload has got, in bytes sent out of bytes total.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct UploadProgress {
+    pub sent: u64,
+    pub total: u64,
+}
+
+impl UploadProgress {
+    /// Fraction of the body sent, 0.0 to 1.0.
+    pub fn fraction(&self) -> f64 {
+        if self.total == 0 { 0.0 } else { (self.sent as f64 / self.total as f64).clamp(0.0, 1.0) }
+    }
+
+    pub fn percent(&self) -> u32 {
+        (self.fraction() * 100.0).round() as u32
+    }
+
+    /// True once the body is out and the server is still writing the files.
+    pub fn finishing(&self) -> bool {
+        self.total > 0 && self.sent >= self.total
+    }
+}
+
 /// Signals shared by every component, handed down through context.
 #[derive(Clone, Copy)]
 pub struct AppState {
@@ -80,6 +103,8 @@ pub struct AppState {
     /// Index into the current page's items, when the lightbox is open.
     pub viewing: RwSignal<Option<usize>>,
     pub uploading: RwSignal<bool>,
+    /// `None` until the browser reports the first chunk of the upload.
+    pub upload_progress: RwSignal<Option<UploadProgress>>,
     pub upload_note: RwSignal<Option<Result<String, String>>>,
     /// Bumped to force a refetch of the current query, e.g. after an upload.
     pub reload: RwSignal<u32>,
@@ -94,6 +119,7 @@ impl AppState {
             error: RwSignal::new(None),
             viewing: RwSignal::new(None),
             uploading: RwSignal::new(false),
+            upload_progress: RwSignal::new(None),
             upload_note: RwSignal::new(None),
             reload: RwSignal::new(0),
         }

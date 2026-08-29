@@ -6,7 +6,7 @@ use wasm_bindgen_futures::spawn_local;
 use web_sys::{DragEvent, FileList, FormData};
 
 use crate::api;
-use crate::state::AppState;
+use crate::state::{AppState, UploadProgress};
 
 #[component]
 pub fn Uploader() -> impl IntoView {
@@ -25,8 +25,10 @@ pub fn Uploader() -> impl IntoView {
         };
 
         let count = files.length();
+        let mut bytes = 0.0;
         for index in 0..count {
             if let Some(file) = files.get(index) {
+                bytes += file.size();
                 // The field name is ignored by the backend, which keys off the
                 // per-part file name instead.
                 let _ = form.append_with_blob_and_filename("files", &file, &file.name());
@@ -35,10 +37,19 @@ pub fn Uploader() -> impl IntoView {
 
         state.uploading.set(true);
         state.upload_note.set(None);
+        // Seeded from the file sizes so the bar starts at 0% rather than
+        // waiting for the browser's first progress event. The multipart
+        // envelope makes the real total a little larger; the first event
+        // corrects it.
+        state.upload_progress.set(Some(UploadProgress { sent: 0, total: bytes as u64 }));
 
         spawn_local(async move {
-            let result = api::upload(form).await;
+            let result = api::upload(form, move |sent, total| {
+                state.upload_progress.set(Some(UploadProgress { sent, total }));
+            })
+            .await;
             state.uploading.set(false);
+            state.upload_progress.set(None);
 
             match result {
                 Ok(response) => {
@@ -120,7 +131,42 @@ pub fn Uploader() -> impl IntoView {
                     }
                 }
             >
-                <div>"Uploading…"</div>
+                <div class="upload-progress">
+                    <div
+                        class="progress-track"
+                        class:indeterminate=move || {
+                            state.upload_progress.get().is_none_or(|progress| progress.finishing())
+                        }
+                    >
+                        <div
+                            class="progress-fill"
+                            style=move || {
+                                let percent = state
+                                    .upload_progress
+                                    .get()
+                                    .map(|progress| progress.percent())
+                                    .unwrap_or(0);
+                                format!("width: {percent}%")
+                            }
+                        ></div>
+                    </div>
+                    <div class="progress-label">
+                        {move || match state.upload_progress.get() {
+                            // The body is out; the server is still writing the
+                            // files, which for large uploads is not instant.
+                            Some(progress) if progress.finishing() => "Saving files…".to_string(),
+                            Some(progress) => {
+                                format!(
+                                    "Uploading… {}% — {} of {}",
+                                    progress.percent(),
+                                    shared::format_size(progress.sent),
+                                    shared::format_size(progress.total),
+                                )
+                            }
+                            None => "Uploading…".to_string(),
+                        }}
+                    </div>
+                </div>
             </Show>
 
             {move || {
