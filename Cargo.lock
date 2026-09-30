@@ -225,6 +225,7 @@ dependencies = [
  "log",
  "mime_guess",
  "pretty_env_logger",
+ "reqwest",
  "serde",
  "serde_json",
  "shared",

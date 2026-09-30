@@ -3,8 +3,8 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Duration;
 
-use teloxide::net::Download;
 use teloxide::prelude::*;
 use teloxide::types::{FileId, FileUniqueId, MediaKind, MessageKind};
 use teloxide::utils::command::BotCommands;
@@ -29,9 +29,37 @@ enum Command {
     Start,
 }
 
+/// Client for file downloads only, cloned into every handler (it is an `Arc`
+/// inside).
+///
+/// The bot's own client has a 17 s total deadline per request, which also
+/// covers reading the body — a large video on a slow link hits it mid-transfer
+/// and fails with "error decoding response body". This one has no total
+/// deadline and instead gives up only when the connection stalls.
+#[derive(Clone)]
+struct DownloadClient(reqwest::Client);
+
+impl DownloadClient {
+    fn new() -> reqwest::Result<Self> {
+        reqwest::Client::builder()
+            .connect_timeout(Duration::from_secs(5))
+            .read_timeout(Duration::from_secs(60))
+            .tcp_nodelay(true)
+            .build()
+            .map(Self)
+    }
+}
+
 /// Long-polls Telegram until the process is stopped.
 pub async fn run(config: Arc<Config>, token: String) {
     let bot = Bot::new(token);
+    let downloads = match DownloadClient::new() {
+        Ok(client) => client,
+        Err(err) => {
+            log::error!("could not create the download client, the bot is disabled: {err}");
+            return;
+        }
+    };
 
     // Populates the "/" menu in the Telegram client. A failure here is not
     // fatal — the commands still work, they are just not suggested.
@@ -45,7 +73,7 @@ pub async fn run(config: Arc<Config>, token: String) {
         .branch(dptree::endpoint(on_message));
 
     Dispatcher::builder(bot, handler)
-        .dependencies(dptree::deps![config])
+        .dependencies(dptree::deps![config, downloads])
         .enable_ctrlc_handler()
         .build()
         .dispatch()
@@ -73,7 +101,12 @@ fn reply_to(command: Command, config: &Config) -> String {
     }
 }
 
-async fn on_message(bot: Bot, message: Message, config: Arc<Config>) -> ResponseResult<()> {
+async fn on_message(
+    bot: Bot,
+    message: Message,
+    config: Arc<Config>,
+    downloads: DownloadClient,
+) -> ResponseResult<()> {
     let MessageKind::Common(common) = &message.kind else {
         log::debug!("skipping non-common message");
         return Ok(());
@@ -84,7 +117,7 @@ async fn on_message(bot: Bot, message: Message, config: Arc<Config>) -> Response
         return Ok(());
     };
 
-    let reply = match save_file(&bot, &config.save_dir, kind, &file_id, &unique_id).await {
+    let reply = match save_file(&bot, &downloads, &config.save_dir, kind, &file_id, &unique_id).await {
         Ok(path) => {
             log::info!("saved {kind} to {}", path.display());
             format!("{kind} saved as {}", file_name(&path))
@@ -125,6 +158,7 @@ fn media_file(media: &MediaKind) -> Option<(&'static str, FileId, FileUniqueId)>
 
 async fn save_file(
     bot: &Bot,
+    downloads: &DownloadClient,
     save_dir: &Path,
     kind: &str,
     file_id: &FileId,
@@ -145,7 +179,7 @@ async fn save_file(
     // Download into a temporary name so an interrupted transfer never leaves a truncated file.
     let partial = media::with_partial_suffix(&destination);
     let mut writer = BufWriter::new(fs::File::create(&partial).await?);
-    bot.download_file(&file.path, &mut writer).await?;
+    teloxide::net::download_file(&downloads.0, bot.api_url(), bot.token(), &file.path, &mut writer).await?;
     writer.flush().await?;
     fs::rename(&partial, &destination).await?;
 

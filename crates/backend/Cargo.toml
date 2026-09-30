@@ -17,6 +17,9 @@ log.workspace = true
 # `rustls` instead of the default `native-tls`: no OpenSSL, so the Linux build is
 # a single static binary that runs on any distro. See README.md.
 teloxide = { version = "0.17.0", default-features = false, features = ["macros", "rustls", "ctrlc_handler"] }
+# Only for the file-download client in bot.rs. Its features unify with
+# teloxide's (`rustls`), so this does not pull in a second TLS stack.
+reqwest = { version = "0.12", default-features = false }
 pretty_env_logger = "0.5"
 tokio = { version = "1.39", features = ["rt-multi-thread", "macros", "fs", "io-util", "signal"] }
 axum = { version = "0.8", features = ["multipart", "http2"] }
