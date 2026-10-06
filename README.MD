@@ -69,6 +69,32 @@ step 3 finds, and that is not reachable from a phone:
 docker run ... -e WEB_URL=http://192.168.1.73:8080 telegram-loader
 ```
 
+## Battery charge control
+
+When the server runs on a laptop, it keeps the battery between 30% and 80% by
+switching the Tuya smart plug the charger is plugged into. Every 60 s it reads
+the charge from `/sys/class/power_supply`, then:
+
+| Battery | Plug | Action |
+| --- | --- | --- |
+| above 80% | on | turn it off |
+| below 30% | off | turn it on |
+
+The plug is only contacted when the battery is outside that range. Each switch is
+logged at `info` level with the charge, e.g.
+`charge control: battery 81%, plug switched OFF`. Failures (the plug is
+unreachable, for example) are logged as warnings, and the next check tries again.
+On a machine with no battery, this feature turns itself off after one warning.
+
+The plug's address, device ID, local key and protocol version (3.5) are
+hard-coded in `crates/backend/src/plug.rs`. The thresholds and the interval are
+constants in `crates/backend/src/charger.rs`. To check the connection to the
+plug without switching it:
+
+```bash
+cargo test -p backend reads_the_real_plug -- --ignored --nocapture
+```
+
 ## The web UI
 
 `http://<host>:8080` serves a gallery of everything in `SAVE_DIR`:

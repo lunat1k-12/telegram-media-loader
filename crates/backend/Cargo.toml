@@ -27,3 +27,11 @@ tower = { version = "0.5", features = ["util"] }
 tower-http = { version = "0.6", features = ["fs", "cors", "trace", "set-header", "compression-gzip", "compression-br"] }
 mime_guess = "2"
 futures-util = "0.3"
+
+# Smart-plug control for charger.rs / plug.rs (Tuya local protocol 3.5). All
+# pure Rust, so the static musl build is unaffected.
+aes-gcm = "0.10"
+anyhow = "1"
+hmac = "0.12"
+rand = "0.9"
+sha2 = "0.10"

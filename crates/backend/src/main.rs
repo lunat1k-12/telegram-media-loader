@@ -2,9 +2,12 @@
 //! web server that lists, streams and accepts uploads for that same folder.
 
 mod api;
+mod battery;
 mod bot;
+mod charger;
 mod config;
 mod media;
+mod plug;
 mod weburl;
 
 use std::sync::Arc;
@@ -52,6 +55,9 @@ async fn main() {
         }
     };
     log::info!("Web UI on http://{} — reachable at {}", config.bind, weburl::web_url(&config));
+
+    // Runs alongside the server for the life of the process, like the bot.
+    tokio::spawn(charger::run());
 
     let server = axum::serve(listener, api::router(Arc::clone(&config))).with_graceful_shutdown(shutdown_signal());
 
