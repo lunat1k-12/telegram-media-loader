@@ -7,6 +7,10 @@ use std::path::PathBuf;
 /// Directory every incoming photo/video/voice is written to, and the directory
 /// the web UI lists.
 pub const DEFAULT_SAVE_DIR: &str = "downloads";
+/// Where video thumbnails are cached. Kept out of the save directory so they
+/// are never listed as media.
+const DEFAULT_THUMB_DIR: &str = "thumbnails";
+const DEFAULT_FFMPEG_BIN: &str = "ffmpeg";
 const DEFAULT_BIND: &str = "0.0.0.0:8080";
 /// Where `trunk build` puts the compiled frontend.
 const DEFAULT_FRONTEND_DIR: &str = "dist/web";
@@ -16,6 +20,10 @@ const DEFAULT_MAX_UPLOAD_BYTES: u64 = 4 * 1024 * 1024 * 1024;
 #[derive(Debug, Clone)]
 pub struct Config {
     pub save_dir: PathBuf,
+    /// Cache of generated video thumbnails; must not be inside `save_dir`.
+    pub thumb_dir: PathBuf,
+    /// Name or path of the ffmpeg executable that makes them.
+    pub ffmpeg_bin: String,
     pub bind: SocketAddr,
     /// Directory holding `index.html` and the wasm bundle. When it is missing
     /// the server still runs and only serves the API.
@@ -33,6 +41,8 @@ pub struct Config {
 impl Config {
     pub fn from_env() -> Result<Self, String> {
         let save_dir = PathBuf::from(env_or(&["SAVE_DIR"], DEFAULT_SAVE_DIR));
+        let thumb_dir = PathBuf::from(env_or(&["THUMB_DIR"], DEFAULT_THUMB_DIR));
+        let ffmpeg_bin = env_or(&["FFMPEG_BIN"], DEFAULT_FFMPEG_BIN);
         let bind_raw = env_or(&["BIND_ADDR"], DEFAULT_BIND);
         let bind: SocketAddr = bind_raw.parse().map_err(|err| format!("invalid BIND_ADDR `{bind_raw}`: {err}"))?;
 
@@ -55,7 +65,7 @@ impl Config {
             .map(|url| url.trim().trim_end_matches('/').to_owned())
             .filter(|url| !url.is_empty());
 
-        Ok(Config { save_dir, bind, frontend_dir, max_upload_bytes, bot_token, web_url })
+        Ok(Config { save_dir, thumb_dir, ffmpeg_bin, bind, frontend_dir, max_upload_bytes, bot_token, web_url })
     }
 }
 

@@ -56,17 +56,21 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     cp "target/$triple/release/telegram-loader" /telegram-loader
 
 # ---------------------------------------------------------------------------
-# 3. Runtime: the binary is static, so nothing else is needed.
+# 3. Runtime: the binary is static, and so is the ffmpeg that makes the video
+#    thumbnails, so nothing else is needed.
 # ---------------------------------------------------------------------------
 FROM scratch
 COPY --from=backend /telegram-loader /telegram-loader
+COPY --from=mwader/static-ffmpeg:7.1 /ffmpeg /ffmpeg
 COPY --from=frontend /app/dist/web /app/web
 
-# SAVE_DIR is relative to the working directory, so media lands in /data/downloads.
+# SAVE_DIR and THUMB_DIR are relative to the working directory, so media lands
+# in /data/downloads and thumbnails in /data/thumbnails.
 WORKDIR /data
 VOLUME /data
 ENV RUST_LOG=info \
     FRONTEND_DIR=/app/web \
+    FFMPEG_BIN=/ffmpeg \
     BIND_ADDR=0.0.0.0:8080
 EXPOSE 8080
 ENTRYPOINT ["/telegram-loader"]

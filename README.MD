@@ -103,6 +103,10 @@ cargo test -p backend reads_the_real_plug -- --ignored --nocapture
 - paginated grid (12/24/48/96 per page), newest first by default
 - filter by images / video / audio / other files, search by file name, and sort
   by date, name or size
+- videos show a poster frame, made with ffmpeg and cached in `THUMB_DIR` —
+  when the bot saves a video, when one is uploaded, or on first view for
+  anything that was already there. Without ffmpeg the browser falls back to
+  loading a frame from the video itself
 - click a card to open it fullscreen — images, playing video, playing audio —
   with `←`/`→` to move through the page and `Esc` to close
 - download any file, individually, from the card or the viewer
@@ -127,6 +131,7 @@ The UI is a client of these endpoints; they are also usable on their own.
 | `GET /api/media?page=&per_page=&kind=&sort=&q=` | one page of the listing, as JSON |
 | `GET /api/media/{name}` | streams the file inline; supports range requests, so video seeks |
 | `GET /api/media/{name}?download=1` | same file as an attachment |
+| `GET /api/media/{name}/thumbnail` | JPEG poster frame of a video, generated on first request; `404` for anything else, or when ffmpeg cannot make one |
 | `POST /api/media` | multipart upload of one or more files |
 | `DELETE /api/media/{name}` | deletes the file; `204` on success |
 | `GET /api/power` | `{"battery_percent": 76, "plug_on": false}` from the last charge check; a field is `null` when unknown |
@@ -145,6 +150,8 @@ the source.
 | --- | --- | --- |
 | `TELOXIDE_TOKEN` (or `BOT_TOKEN`) | — | bot token from @BotFather. **Unset means the bot is disabled** and only the web UI runs. |
 | `SAVE_DIR` | `downloads` | folder that is written to and served. Created at startup; the resolved absolute path is logged. |
+| `THUMB_DIR` | `thumbnails` | cache of video thumbnails. Must be outside `SAVE_DIR`; safe to delete, it is rebuilt on demand. |
+| `FFMPEG_BIN` | `ffmpeg` | ffmpeg executable used for the thumbnails. If it cannot be run, the server logs a warning and videos get no thumbnail. |
 | `BIND_ADDR` | `0.0.0.0:8080` | address the web server listens on |
 | `FRONTEND_DIR` | `dist/web` | compiled UI. If missing, the server logs a warning and serves the API alone. |
 | `MAX_UPLOAD_BYTES` | `4294967296` (4 GiB) | per-file upload limit |

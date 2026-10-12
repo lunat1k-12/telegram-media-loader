@@ -21,7 +21,7 @@ teloxide = { version = "0.17.0", default-features = false, features = ["macros",
 # teloxide's (`rustls`), so this does not pull in a second TLS stack.
 reqwest = { version = "0.12", default-features = false }
 pretty_env_logger = "0.5"
-tokio = { version = "1.39", features = ["rt-multi-thread", "macros", "fs", "io-util", "signal"] }
+tokio = { version = "1.39", features = ["rt-multi-thread", "macros", "fs", "io-util", "signal", "process", "sync", "time"] }
 axum = { version = "0.8", features = ["multipart", "http2"] }
 tower = { version = "0.5", features = ["util"] }
 tower-http = { version = "0.6", features = ["fs", "cors", "trace", "set-header", "compression-gzip", "compression-br"] }

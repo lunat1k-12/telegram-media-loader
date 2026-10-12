@@ -52,6 +52,8 @@ mod tests {
     fn config(bind: &str, web_url: Option<&str>) -> Config {
         Config {
             save_dir: PathBuf::from("downloads"),
+            thumb_dir: PathBuf::from("thumbnails"),
+            ffmpeg_bin: "ffmpeg".to_owned(),
             bind: bind.parse().unwrap(),
             frontend_dir: PathBuf::from("dist/web"),
             max_upload_bytes: 1,

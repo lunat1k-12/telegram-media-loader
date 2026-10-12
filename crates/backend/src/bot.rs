@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
+use shared::MediaCategory;
 use teloxide::prelude::*;
 use teloxide::types::{FileId, FileUniqueId, MediaKind, MessageKind};
 use teloxide::utils::command::BotCommands;
@@ -12,6 +13,7 @@ use tokio::fs;
 use tokio::io::{AsyncWriteExt, BufWriter};
 
 use crate::config::Config;
+use crate::thumbs::Thumbnailer;
 use crate::{media, weburl};
 
 type SaveResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
@@ -51,7 +53,7 @@ impl DownloadClient {
 }
 
 /// Long-polls Telegram until the process is stopped.
-pub async fn run(config: Arc<Config>, token: String) {
+pub async fn run(config: Arc<Config>, token: String, thumbs: Arc<Thumbnailer>) {
     let bot = Bot::new(token);
     let downloads = match DownloadClient::new() {
         Ok(client) => client,
@@ -73,7 +75,7 @@ pub async fn run(config: Arc<Config>, token: String) {
         .branch(dptree::endpoint(on_message));
 
     Dispatcher::builder(bot, handler)
-        .dependencies(dptree::deps![config, downloads])
+        .dependencies(dptree::deps![config, downloads, thumbs])
         .enable_ctrlc_handler()
         .build()
         .dispatch()
@@ -106,6 +108,7 @@ async fn on_message(
     message: Message,
     config: Arc<Config>,
     downloads: DownloadClient,
+    thumbs: Arc<Thumbnailer>,
 ) -> ResponseResult<()> {
     let MessageKind::Common(common) = &message.kind else {
         log::debug!("skipping non-common message");
@@ -120,6 +123,12 @@ async fn on_message(
     let reply = match save_file(&bot, &downloads, &config.save_dir, kind, &file_id, &unique_id).await {
         Ok(path) => {
             log::info!("saved {kind} to {}", path.display());
+            // Goes by the extension rather than `kind`, so a video sent "as a
+            // file" gets one too. A failure costs only the preview.
+            let name = file_name(&path);
+            if MediaCategory::from_file_name(&name) == MediaCategory::Video {
+                thumbs.ensure(&name, &path).await;
+            }
             format!("{kind} saved as {}", file_name(&path))
         }
         Err(err) => {
@@ -209,6 +218,8 @@ mod tests {
     fn test_config(web_url: Option<&str>) -> Config {
         Config {
             save_dir: PathBuf::from("downloads"),
+            thumb_dir: PathBuf::from("thumbnails"),
+            ffmpeg_bin: "ffmpeg".to_owned(),
             bind: "0.0.0.0:8080".parse().unwrap(),
             frontend_dir: PathBuf::from("dist/web"),
             max_upload_bytes: 1,

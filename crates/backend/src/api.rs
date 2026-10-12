@@ -27,20 +27,23 @@ use tower_http::trace::TraceLayer;
 use crate::charger::StatusHandle;
 use crate::config::Config;
 use crate::media::{self, ListRequest, MediaError};
+use crate::thumbs::Thumbnailer;
 
 #[derive(Clone)]
 pub struct AppState {
     pub config: Arc<Config>,
     /// Written by the charge controller, read by `/api/power`.
     pub power: StatusHandle,
+    pub thumbs: Arc<Thumbnailer>,
 }
 
-pub fn router(config: Arc<Config>, power: StatusHandle) -> Router {
-    let state = AppState { config: Arc::clone(&config), power };
+pub fn router(config: Arc<Config>, power: StatusHandle, thumbs: Arc<Thumbnailer>) -> Router {
+    let state = AppState { config: Arc::clone(&config), power, thumbs };
 
     let api = Router::new()
         .route("/media", get(list_media).post(upload_media))
         .route("/media/{name}", get(get_media).delete(delete_media))
+        .route("/media/{name}/thumbnail", get(get_thumbnail))
         .route("/power", get(power_status))
         .route("/health", get(health))
         // Uploads are streamed straight to disk, so the in-memory body limit
@@ -137,11 +140,37 @@ async fn get_media(
     Ok(response)
 }
 
+/// Serves a video's poster frame, generating it on the spot if the bot or an
+/// upload has not already done so — which covers every video that was in the
+/// directory before thumbnails existed.
+async fn get_thumbnail(
+    State(state): State<AppState>,
+    PathParam(name): PathParam<String>,
+    request: Request,
+) -> Result<Response, ApiFailure> {
+    let path = media::resolve(&state.config.save_dir, &name).await?;
+    if MediaCategory::from_file_name(&name) != MediaCategory::Video {
+        return Err(MediaError::NotFound.into());
+    }
+    let Some(thumb) = state.thumbs.ensure(&name, &path).await else {
+        return Err(ApiFailure { status: StatusCode::NOT_FOUND, message: "no thumbnail for this video".to_owned() });
+    };
+
+    let serve = ServeFile::new(&thumb);
+    let response = serve.oneshot(request).await.map_err(|err| MediaError::Io(std::io::Error::other(err)))?;
+    let mut response = response.map(Body::new);
+    // Same reasoning as for the file itself: the name can be reused.
+    response.headers_mut().insert(header::CACHE_CONTROL, HeaderValue::from_static("private, no-cache"));
+
+    Ok(response)
+}
+
 async fn delete_media(
     State(state): State<AppState>,
     PathParam(name): PathParam<String>,
 ) -> Result<StatusCode, ApiFailure> {
     media::delete(&state.config.save_dir, &name).await?;
+    state.thumbs.remove(&name).await;
     log::info!("deleted {name}");
     Ok(StatusCode::NO_CONTENT)
 }
@@ -246,6 +275,11 @@ async fn upload_media(
         match media::describe(&destination).await {
             Ok(item) => {
                 log::info!("uploaded {} ({} bytes)", item.name, item.size);
+                // Done before answering, so the thumbnail is there by the
+                // time the gallery reloads. A failure costs only the preview.
+                if item.category == MediaCategory::Video {
+                    state.thumbs.ensure(&item.name, &destination).await;
+                }
                 response.uploaded.push(item);
             }
             Err(err) => response.failed.push(UploadFailure { name: raw_name, error: err.to_string() }),
@@ -281,8 +315,8 @@ impl IntoResponse for ApiFailure {
     }
 }
 
-/// Convenience for `main`, which needs the directory to exist before serving.
-pub async fn ensure_save_dir(save_dir: &PathBuf) -> std::io::Result<PathBuf> {
-    fs::create_dir_all(save_dir).await?;
-    fs::canonicalize(save_dir).await
+/// Convenience for `main`, which needs its directories to exist before serving.
+pub async fn ensure_dir(dir: &PathBuf) -> std::io::Result<PathBuf> {
+    fs::create_dir_all(dir).await?;
+    fs::canonicalize(dir).await
 }

@@ -142,6 +142,11 @@ impl MediaItem {
         format!("/api/media/{}", encode_path_segment(&self.name))
     }
 
+    /// URL of the poster frame; only videos have one.
+    pub fn thumbnail_url(&self) -> String {
+        format!("/api/media/{}/thumbnail", encode_path_segment(&self.name))
+    }
+
     /// URL that serves the file as an attachment.
     pub fn download_url(&self) -> String {
         format!("/api/media/{}?download=1", encode_path_segment(&self.name))

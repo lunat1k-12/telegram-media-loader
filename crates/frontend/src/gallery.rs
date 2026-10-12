@@ -58,13 +58,39 @@ fn Card(item: MediaItem, index: usize) -> impl IntoView {
             <img src=url.clone() alt=name.clone() loading="lazy" decoding="async" />
         }
         .into_any(),
-        // `#t=0.1` nudges the browser past frame zero, which is usually black;
-        // it works because the backend answers range requests.
-        MediaCategory::Video => view! {
-            <video src=format!("{url}#t=0.1") preload="metadata" muted=true playsinline=true></video>
-            <span class="play" aria-hidden="true"></span>
+        MediaCategory::Video => {
+            let thumbnail_url = item.thumbnail_url();
+            // Set when the backend has no thumbnail (no ffmpeg, or a file it
+            // cannot decode); the browser then renders a frame itself.
+            let no_thumbnail = RwSignal::new(false);
+            let poster = move || {
+                if no_thumbnail.get() {
+                    // `#t=0.1` nudges the browser past frame zero, which is
+                    // usually black; it works because the backend answers
+                    // range requests.
+                    view! {
+                        <video src=format!("{url}#t=0.1") preload="metadata" muted=true playsinline=true></video>
+                    }
+                    .into_any()
+                } else {
+                    view! {
+                        <img
+                            src=thumbnail_url.clone()
+                            alt=name.clone()
+                            loading="lazy"
+                            decoding="async"
+                            on:error=move |_| no_thumbnail.set(true)
+                        />
+                    }
+                    .into_any()
+                }
+            };
+            view! {
+                {poster}
+                <span class="play" aria-hidden="true"></span>
+            }
+            .into_any()
         }
-        .into_any(),
         MediaCategory::Audio => view! { <span class="glyph">"🎧"</span> }.into_any(),
         MediaCategory::Other => view! { <span class="glyph">"📄"</span> }.into_any(),
     };
