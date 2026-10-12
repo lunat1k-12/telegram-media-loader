@@ -57,9 +57,11 @@ async fn main() {
     log::info!("Web UI on http://{} — reachable at {}", config.bind, weburl::web_url(&config));
 
     // Runs alongside the server for the life of the process, like the bot.
-    tokio::spawn(charger::run());
+    let power = charger::StatusHandle::default();
+    tokio::spawn(charger::run(Arc::clone(&power)));
 
-    let server = axum::serve(listener, api::router(Arc::clone(&config))).with_graceful_shutdown(shutdown_signal());
+    let server =
+        axum::serve(listener, api::router(Arc::clone(&config), power)).with_graceful_shutdown(shutdown_signal());
 
     match config.bot_token.clone() {
         Some(token) => {

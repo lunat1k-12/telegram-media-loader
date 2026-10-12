@@ -1,10 +1,10 @@
-//! Fullscreen lightbox: images, playable video/audio, and a download link.
+//! Fullscreen lightbox: images, playable video/audio, download and delete.
 
 use leptos::prelude::*;
 use shared::{MediaCategory, MediaItem};
 
 use crate::format;
-use crate::icons::DownloadIcon;
+use crate::icons::{DownloadIcon, TrashIcon};
 use crate::state::AppState;
 
 #[component]
@@ -44,6 +44,7 @@ pub fn Viewer() -> impl IntoView {
             let count = state.items().len();
             let download_url = item.download_url();
             let name = item.name.clone();
+            let delete_name = item.name.clone();
 
             view! {
                 <div class="viewer" on:click=move |_| state.viewing.set(None)>
@@ -66,6 +67,10 @@ pub fn Viewer() -> impl IntoView {
                             <DownloadIcon />
                             "Download"
                         </a>
+                        <button class="btn danger" on:click=move |_| state.delete(delete_name.clone())>
+                            <TrashIcon />
+                            "Delete"
+                        </button>
                         <button class="btn" on:click=move |_| state.viewing.set(None)>
                             "✕ Close"
                         </button>

@@ -2,6 +2,9 @@
 
 use leptos::prelude::*;
 use shared::{DEFAULT_PER_PAGE, MediaCategory, MediaItem, MediaPage, SortOrder};
+use wasm_bindgen_futures::spawn_local;
+
+use crate::api;
 
 /// Everything that decides which files are shown. Kept in the URL so a view can
 /// be reloaded or shared.
@@ -152,5 +155,36 @@ impl AppState {
 
     pub fn refresh(&self) {
         self.reload.update(|counter| *counter += 1);
+    }
+
+    /// Asks for confirmation, deletes the file on the server, then refetches.
+    pub fn delete(&self, name: String) {
+        let state = *self;
+        let Some(window) = web_sys::window() else { return };
+        if !window.confirm_with_message(&format!("Delete {name}? This cannot be undone.")).unwrap_or(false) {
+            return;
+        }
+
+        spawn_local(async move {
+            if let Err(err) = api::delete_media(&name).await {
+                let _ = window.alert_with_message(&format!("Could not delete {name}: {err}"));
+                return;
+            }
+
+            // Drop it from the page straight away, so an open lightbox moves on
+            // to the next file instead of waiting for the refetch.
+            state.page.update(|page| {
+                if let Some(page) = page {
+                    page.items.retain(|item| item.name != name);
+                }
+            });
+            let remaining = state.page.with_untracked(|page| page.as_ref().map_or(0, |page| page.items.len()));
+            state.viewing.update(|viewing| {
+                if let Some(index) = *viewing {
+                    *viewing = remaining.checked_sub(1).map(|last| index.min(last));
+                }
+            });
+            state.refresh();
+        });
     }
 }

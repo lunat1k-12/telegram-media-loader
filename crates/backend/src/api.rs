@@ -2,7 +2,7 @@
 //! compiled Leptos frontend served as static files.
 
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, PoisonError};
 
 use axum::body::Body;
 use axum::extract::{DefaultBodyLimit, Multipart, Path as PathParam, Query, Request, State};
@@ -12,8 +12,8 @@ use axum::routing::get;
 use axum::{Json, Router};
 use serde::Deserialize;
 use shared::{
-    ApiError, DEFAULT_PER_PAGE, MAX_PER_PAGE, MediaCategory, MediaPage, SortOrder, UploadFailure, UploadResponse,
-    encode_path_segment,
+    ApiError, DEFAULT_PER_PAGE, MAX_PER_PAGE, MediaCategory, MediaPage, PowerStatus, SortOrder, UploadFailure,
+    UploadResponse, encode_path_segment,
 };
 use tokio::fs;
 use tokio::io::{AsyncWriteExt, BufWriter};
@@ -24,20 +24,24 @@ use tower_http::cors::CorsLayer;
 use tower_http::services::{ServeDir, ServeFile};
 use tower_http::trace::TraceLayer;
 
+use crate::charger::StatusHandle;
 use crate::config::Config;
 use crate::media::{self, ListRequest, MediaError};
 
 #[derive(Clone)]
 pub struct AppState {
     pub config: Arc<Config>,
+    /// Written by the charge controller, read by `/api/power`.
+    pub power: StatusHandle,
 }
 
-pub fn router(config: Arc<Config>) -> Router {
-    let state = AppState { config: Arc::clone(&config) };
+pub fn router(config: Arc<Config>, power: StatusHandle) -> Router {
+    let state = AppState { config: Arc::clone(&config), power };
 
     let api = Router::new()
         .route("/media", get(list_media).post(upload_media))
-        .route("/media/{name}", get(get_media))
+        .route("/media/{name}", get(get_media).delete(delete_media))
+        .route("/power", get(power_status))
         .route("/health", get(health))
         // Uploads are streamed straight to disk, so the in-memory body limit
         // would only get in the way; `max_upload_bytes` caps them instead.
@@ -66,6 +70,11 @@ fn frontend_service(frontend_dir: &std::path::Path) -> ServeDir<ServeFile> {
 
 async fn health() -> impl IntoResponse {
     Json(serde_json::json!({ "status": "ok" }))
+}
+
+/// Battery charge and plug state as of the charge controller's last check.
+async fn power_status(State(state): State<AppState>) -> Json<PowerStatus> {
+    Json(*state.power.lock().unwrap_or_else(PoisonError::into_inner))
 }
 
 #[derive(Debug, Deserialize)]
@@ -120,11 +129,21 @@ async fn get_media(
     if let Ok(value) = HeaderValue::from_str(&content_disposition(&name, as_attachment)) {
         headers.insert(header::CONTENT_DISPOSITION, value);
     }
-    // File names embed a stable id, so a cached copy stays valid; keep it
-    // private because the directory is not meant to be shared by a proxy.
-    headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("private, max-age=86400"));
+    // A deleted file's name can be taken by a different upload, so the browser
+    // has to revalidate (a cheap 304, `ServeFile` sends `Last-Modified`); keep
+    // it private because the directory is not meant to be shared by a proxy.
+    headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("private, no-cache"));
 
     Ok(response)
+}
+
+async fn delete_media(
+    State(state): State<AppState>,
+    PathParam(name): PathParam<String>,
+) -> Result<StatusCode, ApiFailure> {
+    media::delete(&state.config.save_dir, &name).await?;
+    log::info!("deleted {name}");
+    Ok(StatusCode::NO_CONTENT)
 }
 
 /// Builds a `Content-Disposition` value that survives non-ASCII file names.

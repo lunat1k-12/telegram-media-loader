@@ -86,6 +86,13 @@ pub async fn resolve(save_dir: &Path, name: &str) -> Result<PathBuf, MediaError>
     Ok(resolved)
 }
 
+/// Removes one file from `save_dir`, under the same name rules as `resolve`.
+pub async fn delete(save_dir: &Path, name: &str) -> Result<(), MediaError> {
+    let path = resolve(save_dir, name).await?;
+    fs::remove_file(&path).await?;
+    Ok(())
+}
+
 /// Lists the directory, applies the filter and returns the requested page.
 ///
 /// The whole directory is read on every request. That is fine for the tens of
@@ -258,6 +265,24 @@ mod tests {
         assert!(validate_name("").is_err());
         assert!(validate_name("photo_AgAD.jpg").is_ok());
         assert!(validate_name("holiday video (1).mp4").is_ok());
+    }
+
+    #[tokio::test]
+    async fn deletes_only_files_inside_the_directory() {
+        let dir = std::env::temp_dir().join(format!("telegram-loader-delete-{}", std::process::id()));
+        let inner = dir.join("media");
+        fs::create_dir_all(&inner).await.unwrap();
+        fs::write(inner.join("photo.jpg"), b"x").await.unwrap();
+        fs::write(dir.join("outside.jpg"), b"x").await.unwrap();
+
+        assert!(matches!(delete(&inner, "../outside.jpg").await, Err(MediaError::InvalidName)));
+        assert!(fs::try_exists(dir.join("outside.jpg")).await.unwrap());
+
+        delete(&inner, "photo.jpg").await.unwrap();
+        assert!(!fs::try_exists(inner.join("photo.jpg")).await.unwrap());
+        assert!(matches!(delete(&inner, "photo.jpg").await, Err(MediaError::NotFound)));
+
+        fs::remove_dir_all(&dir).await.unwrap();
     }
 
     #[test]

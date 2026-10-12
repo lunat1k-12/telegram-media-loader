@@ -176,6 +176,17 @@ pub struct UploadFailure {
     pub error: String,
 }
 
+/// What the charge controller saw on its last check, served by `/api/power`.
+///
+/// Each half is `None` when it could not be read: both on a machine without a
+/// battery, `plug_on` alone while the plug is unreachable.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PowerStatus {
+    /// Battery charge, 0–100.
+    pub battery_percent: Option<u8>,
+    pub plug_on: Option<bool>,
+}
+
 /// Error body returned by every failing endpoint.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ApiError {

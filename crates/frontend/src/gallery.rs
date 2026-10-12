@@ -4,7 +4,7 @@ use leptos::prelude::*;
 use shared::{MediaCategory, MediaItem};
 
 use crate::format;
-use crate::icons::DownloadIcon;
+use crate::icons::{DownloadIcon, TrashIcon};
 use crate::state::AppState;
 
 #[component]
@@ -51,6 +51,7 @@ fn Card(item: MediaItem, index: usize) -> impl IntoView {
     let download_url = item.download_url();
     let name = item.name.clone();
     let title = item.name.clone();
+    let delete_name = item.name.clone();
 
     let preview = match item.category {
         MediaCategory::Image => view! {
@@ -84,13 +85,22 @@ fn Card(item: MediaItem, index: usize) -> impl IntoView {
                 <span class="sub">
                     <span>{shared::format_size(item.size)}</span>
                     <span>{format::short_timestamp(item.modified_ms)}</span>
-                    <a
-                        href=download_url
-                        download=item.name.clone()
-                        title=format!("Download {}", item.name)
-                    >
-                        <DownloadIcon />
-                    </a>
+                    <span class="actions">
+                        <a
+                            href=download_url
+                            download=item.name.clone()
+                            title=format!("Download {}", item.name)
+                        >
+                            <DownloadIcon />
+                        </a>
+                        <button
+                            class="delete"
+                            title=format!("Delete {}", item.name)
+                            on:click=move |_| state.delete(delete_name.clone())
+                        >
+                            <TrashIcon />
+                        </button>
+                    </span>
                 </span>
             </div>
         </article>

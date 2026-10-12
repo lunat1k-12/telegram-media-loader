@@ -2,8 +2,10 @@
 //! its charger is plugged into.
 
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
+use shared::PowerStatus;
 use tokio::time::MissedTickBehavior;
 
 use crate::{battery, plug};
@@ -14,9 +16,13 @@ const STOP_ABOVE: u8 = 80;
 /// Below this charge the plug is turned on.
 const START_BELOW: u8 = 30;
 
+/// The reading from the latest check, shared with the web API. It stays at the
+/// all-`None` default on a machine without a battery.
+pub type StatusHandle = Arc<Mutex<PowerStatus>>;
+
 /// Checks the battery every `CHECK_INTERVAL` until the process is stopped.
 /// Returns at once on a machine without a battery.
-pub async fn run() {
+pub async fn run(status: StatusHandle) {
     let batteries = match battery::find() {
         Ok(batteries) if !batteries.is_empty() => batteries,
         Ok(_) => {
@@ -39,7 +45,8 @@ pub async fn run() {
     loop {
         ticker.tick().await;
         let batteries = batteries.clone();
-        match tokio::task::spawn_blocking(move || check(&batteries)).await {
+        let status = Arc::clone(&status);
+        match tokio::task::spawn_blocking(move || check(&batteries, &status)).await {
             Ok(Ok(())) => {}
             Ok(Err(err)) => log::warn!("charge control: {err:#}"),
             Err(err) => log::error!("charge control check panicked: {err}"),
@@ -47,20 +54,37 @@ pub async fn run() {
     }
 }
 
-/// One check: reads the battery and, when it is outside the band, makes sure
-/// the plug is in the state that brings it back.
-fn check(batteries: &[PathBuf]) -> anyhow::Result<()> {
+/// One check: reads the battery and the plug, publishes both for the web UI,
+/// and, when the battery is outside the band, makes sure the plug is in the
+/// state that brings it back.
+fn check(batteries: &[PathBuf], status: &StatusHandle) -> anyhow::Result<()> {
+    // Published in one go once the check is over, failed or not, so the UI
+    // never shows half of a check — and shows "unknown" for whatever failed.
+    let mut reading = PowerStatus::default();
+    let result = check_and_switch(batteries, &mut reading);
+    *status.lock().unwrap_or_else(PoisonError::into_inner) = reading;
+    result
+}
+
+fn check_and_switch(batteries: &[PathBuf], reading: &mut PowerStatus) -> anyhow::Result<()> {
     let percent = battery::percent(batteries)?;
+    reading.battery_percent = Some(percent);
+    let plug_on = plug::is_on()?;
+    reading.plug_on = Some(plug_on);
+
     let Some(want_on) = wanted_plug_state(percent) else {
         log::debug!("charge control: battery {percent}%, within range");
         return Ok(());
     };
-
-    if plug::is_on()? == want_on {
+    if plug_on == want_on {
         log::debug!("charge control: battery {percent}%, plug already {}", on_off(want_on));
         return Ok(());
     }
+
+    // If the switch fails the plug is in an unknown state until the next check.
+    reading.plug_on = None;
     plug::switch(want_on)?;
+    reading.plug_on = Some(want_on);
     log::info!("charge control: battery {percent}%, plug switched {}", on_off(want_on));
     Ok(())
 }

@@ -80,6 +80,63 @@ a {
   flex: 1;
 }
 
+/* Battery charge and smart-plug state, right-aligned in the header. */
+.power {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  align-self: center;
+  color: var(--text-dim);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.power > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.battery {
+  position: relative;
+  width: 24px;
+  height: 12px;
+  padding: 1px;
+  border: 1.5px solid currentColor;
+  border-radius: 3px;
+}
+
+/* The terminal nub. */
+.battery::after {
+  content: "";
+  position: absolute;
+  right: -4.5px;
+  top: 2px;
+  width: 2px;
+  height: 5px;
+  border-radius: 0 1px 1px 0;
+  background: currentColor;
+}
+
+.battery-fill {
+  display: block;
+  height: 100%;
+  border-radius: 1px;
+  background: var(--ok);
+}
+
+.battery.low .battery-fill {
+  background: var(--danger);
+}
+
+.plug.on {
+  color: var(--ok);
+}
+
+.plug.unknown {
+  color: var(--danger);
+}
+
 /* ---------- toolbar ---------- */
 
 .toolbar {
@@ -183,6 +240,11 @@ select {
 
 .btn.primary:hover:not(:disabled) {
   background: #58aeff;
+}
+
+.btn.danger:hover:not(:disabled) {
+  color: var(--danger);
+  border-color: #f8636b55;
 }
 
 /* ---------- upload ---------- */
@@ -393,9 +455,20 @@ select {
   font-variant-numeric: tabular-nums;
 }
 
-.meta .sub a {
+.meta .sub .actions {
   display: inline-flex;
   align-items: center;
+  gap: 10px;
+}
+
+.meta .sub a,
+.meta .sub button {
+  display: inline-flex;
+  align-items: center;
+  padding: 0;
+  background: none;
+  border: 0;
+  cursor: pointer;
   color: var(--text-dim);
   text-decoration: none;
   opacity: 0.85;
@@ -403,6 +476,11 @@ select {
 
 .meta .sub a:hover {
   color: var(--accent);
+  opacity: 1;
+}
+
+.meta .sub button.delete:hover {
+  color: var(--danger);
   opacity: 1;
 }
 

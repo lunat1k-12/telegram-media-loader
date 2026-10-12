@@ -80,7 +80,8 @@ the charge from `/sys/class/power_supply`, then:
 | above 80% | on | turn it off |
 | below 30% | off | turn it on |
 
-The plug is only contacted when the battery is outside that range. Each switch is
+The plug is asked for its state on every check, so the web UI can show it, but
+it is only switched when the battery is outside that range. Each switch is
 logged at `info` level with the charge, e.g.
 `charge control: battery 81%, plug switched OFF`. Failures (the plug is
 unreachable, for example) are logged as warnings, and the next check tries again.
@@ -105,11 +106,17 @@ cargo test -p backend reads_the_real_plug -- --ignored --nocapture
 - click a card to open it fullscreen — images, playing video, playing audio —
   with `←`/`→` to move through the page and `Esc` to close
 - download any file, individually, from the card or the viewer
+- delete any file, from the card or the viewer, after a confirmation
 - upload by dropping files on the page or picking them; new files never
   overwrite an existing name, they get a `_1`, `_2` … suffix
 
 The filter, page and search live in the URL, so a view can be bookmarked or
 shared.
+
+On a laptop, the header also shows the battery charge and whether the smart plug
+is on, as of the charge controller's last check (see above). It reads
+"Plug unreachable" when the plug did not answer, and is hidden on a machine with
+no battery.
 
 ### API
 
@@ -121,6 +128,8 @@ The UI is a client of these endpoints; they are also usable on their own.
 | `GET /api/media/{name}` | streams the file inline; supports range requests, so video seeks |
 | `GET /api/media/{name}?download=1` | same file as an attachment |
 | `POST /api/media` | multipart upload of one or more files |
+| `DELETE /api/media/{name}` | deletes the file; `204` on success |
+| `GET /api/power` | `{"battery_percent": 76, "plug_on": false}` from the last charge check; a field is `null` when unknown |
 | `GET /api/health` | liveness check |
 
 `{name}` is a plain file name. Anything with a path separator, a leading dot or

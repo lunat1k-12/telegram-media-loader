@@ -1,9 +1,21 @@
-//! Title bar with the folder totals, and the filter/sort/search controls.
+//! Title bar with the folder totals and the battery/plug readout, and the
+//! filter/sort/search controls.
+
+use std::time::Duration;
 
 use leptos::prelude::*;
-use shared::{MediaCategory, SortOrder};
+use shared::{MediaCategory, PowerStatus, SortOrder};
+use wasm_bindgen_futures::spawn_local;
 
+use crate::api;
+use crate::icons::PlugIcon;
 use crate::state::AppState;
+
+/// The backend re-reads the battery once a minute; polling twice as often keeps
+/// the readout at most ~90 s behind.
+const POWER_POLL_INTERVAL: Duration = Duration::from_secs(30);
+/// At or below this charge the gauge turns red.
+const LOW_BATTERY: u8 = 20;
 
 #[component]
 pub fn Masthead() -> impl IntoView {
@@ -25,7 +37,49 @@ pub fn Masthead() -> impl IntoView {
             <h1>"Media library"</h1>
             <span class="stats">{stats}</span>
             <span class="spacer"></span>
+            <PowerIndicator />
         </header>
+    }
+}
+
+/// Battery charge and smart-plug state of the machine the server runs on.
+/// Renders nothing when that machine has no battery.
+#[component]
+fn PowerIndicator() -> impl IntoView {
+    let power = RwSignal::new(PowerStatus::default());
+
+    let poll = move || {
+        spawn_local(async move {
+            // A failed poll clears the readout rather than leaving a stale one.
+            power.set(api::fetch_power().await.unwrap_or_default());
+        });
+    };
+    poll();
+    set_interval(poll, POWER_POLL_INTERVAL);
+
+    move || {
+        let PowerStatus { battery_percent, plug_on } = power.get();
+        let percent = battery_percent?;
+        let plug = match plug_on {
+            Some(true) => "Plug on",
+            Some(false) => "Plug off",
+            None => "Plug unreachable",
+        };
+
+        Some(view! {
+            <span class="power">
+                <span title="Battery charge">
+                    <span class="battery" class:low={ percent <= LOW_BATTERY }>
+                        <span class="battery-fill" style=format!("width: {percent}%")></span>
+                    </span>
+                    {format!("{percent}%")}
+                </span>
+                <span class="plug" class:on={ plug_on == Some(true) } class:unknown=plug_on.is_none()>
+                    <PlugIcon />
+                    {plug}
+                </span>
+            </span>
+        })
     }
 }
 

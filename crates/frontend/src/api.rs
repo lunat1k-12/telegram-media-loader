@@ -1,7 +1,7 @@
 //! Thin wrappers over the backend's JSON endpoints.
 
 use gloo_net::http::Request;
-use shared::{ApiError, MediaPage, UploadResponse};
+use shared::{ApiError, MediaPage, PowerStatus, UploadResponse};
 use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::Closure;
 use wasm_bindgen_futures::JsFuture;
@@ -18,6 +18,27 @@ pub async fn fetch_page(query: &Query) -> Result<MediaPage, String> {
         return Err(error_message(response).await);
     }
     response.json::<MediaPage>().await.map_err(|err| format!("unexpected response: {err}"))
+}
+
+/// Deletes one file. A file that is already gone counts as deleted.
+pub async fn delete_media(name: &str) -> Result<(), String> {
+    let url = format!("/api/media/{}", shared::encode_path_segment(name));
+    let response = Request::delete(&url).send().await.map_err(|err| format!("request failed: {err}"))?;
+
+    if !response.ok() && response.status() != 404 {
+        return Err(error_message(response).await);
+    }
+    Ok(())
+}
+
+/// Battery charge and plug state, as last seen by the backend.
+pub async fn fetch_power() -> Result<PowerStatus, String> {
+    let response = Request::get("/api/power").send().await.map_err(|err| format!("request failed: {err}"))?;
+
+    if !response.ok() {
+        return Err(error_message(response).await);
+    }
+    response.json::<PowerStatus>().await.map_err(|err| format!("unexpected response: {err}"))
 }
 
 /// Posts a multipart form built from the files the user picked or dropped.
