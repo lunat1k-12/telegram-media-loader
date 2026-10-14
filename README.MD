@@ -41,6 +41,74 @@ re-downloaded. Downloads land in a `.part` file and are renamed on success, so a
 interrupted transfer never leaves a truncated file behind. Uploads from the web
 UI use the same `.part` dance and keep their original name.
 
+## Files over 20 MB
+
+The public Bot API (api.telegram.org) refuses to let a bot download anything
+larger than 20 MB — Telegram answers `Bad Request: file is too big`, and the bot
+replies that the file is over the limit. To save files up to 2 GB, run Telegram's
+own [Bot API server](https://github.com/tdlib/telegram-bot-api) in `--local`
+mode and point the bot at it with `BOT_API_URL`:
+
+1. Get an `api_id` and `api_hash` at <https://my.telegram.org> → API development tools.
+2. Log the bot out of the public API, once (it cannot log back in there for
+   10 minutes):
+
+   ```bash
+   curl https://api.telegram.org/bot<token>/logOut
+   ```
+
+3. Run the server and the loader side by side. In `--local` mode the server
+   hands out files as paths on its own disk, not as URLs, so the loader needs
+   the server's data directory mounted **at the same path**:
+
+   ```bash
+   docker network create tg
+   docker run -d --name telegram-bot-api --network tg --restart unless-stopped \
+     -e TELEGRAM_API_ID=<api_id> -e TELEGRAM_API_HASH=<api_hash> -e TELEGRAM_LOCAL=1 \
+     -v telegram-bot-api:/var/lib/telegram-bot-api \
+     aiogram/telegram-bot-api
+   docker run -d --name telegram-loader --network tg --restart unless-stopped \
+     -p 8080:8080 \
+     -e TELOXIDE_TOKEN=123:abc \
+     -e BOT_API_URL=http://telegram-bot-api:8081 \
+     -e WEB_URL=http://192.168.1.73:8080 \
+     -v /srv/telegram-loader:/data \
+     -v telegram-bot-api:/var/lib/telegram-bot-api:ro \
+     telegram-loader
+   ```
+
+The loader copies each file out of the server's directory into `SAVE_DIR`. The
+server keeps its own copy, so prune `/var/lib/telegram-bot-api` now and then if
+disk space matters.
+
+### The loader as a binary, the server in Docker
+
+When the loader runs straight on the host (for example under the systemd unit
+below), it reads the files from the host's disk. Bind-mount a host directory
+**at the same path** instead of using a named volume, and publish the server's
+port on localhost only. Create the directory first. Docker would create a
+missing one too, but owned by root, and Docker Desktop and rootless Docker then
+fail at startup with `chown: /var/lib/telegram-bot-api: Permission denied`:
+
+```bash
+sudo mkdir -p /var/lib/telegram-bot-api
+# Only for Docker Desktop or rootless Docker, where the container cannot chown
+# a root-owned directory. Not needed with the regular Docker engine on Ubuntu.
+sudo chown $USER /var/lib/telegram-bot-api
+
+docker run -d --name telegram-bot-api --restart unless-stopped \
+  -p 127.0.0.1:8081:8081 \
+  -e TELEGRAM_API_ID=<api_id> -e TELEGRAM_API_HASH=<api_hash> -e TELEGRAM_LOCAL=1 \
+  -v /var/lib/telegram-bot-api:/var/lib/telegram-bot-api \
+  aiogram/telegram-bot-api
+```
+
+Then add `Environment=BOT_API_URL=http://127.0.0.1:8081` to the unit. The server
+writes files as its own user, and they may be readable by that user only. The
+unit below has no `User=`, so the loader runs as root and can read them. If you
+run it as another user and the bot replies `could not copy ...: Permission
+denied`, that user cannot read the server's files.
+
 ## Bot commands
 
 | Command | Reply |
@@ -156,6 +224,7 @@ the source.
 | `FRONTEND_DIR` | `dist/web` | compiled UI. If missing, the server logs a warning and serves the API alone. |
 | `MAX_UPLOAD_BYTES` | `4294967296` (4 GiB) | per-file upload limit |
 | `WEB_URL` (or `PUBLIC_URL`) | derived from `BIND_ADDR` | the address `/webpage` replies with, see above. Set it in Docker or behind a proxy. |
+| `BOT_API_URL` (or `TELOXIDE_API_URL`) | api.telegram.org | a local Bot API server, needed for files over 20 MB, see above |
 | `RUST_LOG` | — | log filter, see below |
 
 > The bot token used to be hard-coded in `src/main.rs` and is therefore in this
@@ -265,6 +334,8 @@ Environment=TELOXIDE_TOKEN=123:abc
 Environment=FRONTEND_DIR=/srv/telegram-loader/web
 Environment=BIND_ADDR=127.0.0.1:8080
 Environment=WEB_URL=http://192.168.1.73:8080
+# Only with a local Bot API server, for files over 20 MB (see above).
+#Environment=BOT_API_URL=http://127.0.0.1:8081
 Restart=always
 
 [Install]

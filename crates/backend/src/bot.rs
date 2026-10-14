@@ -18,6 +18,10 @@ use crate::{media, weburl};
 
 type SaveResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
+/// The largest file the public Bot API lets a bot download. Anything bigger
+/// needs a local Bot API server, see `Config::bot_api_url`.
+const PUBLIC_API_MAX_DOWNLOAD: u32 = 20 * 1024 * 1024;
+
 /// Commands the bot answers. The descriptions are what Telegram shows in the
 /// command menu, so they are written for a user, not for the log.
 #[derive(BotCommands, Clone, Debug)]
@@ -54,7 +58,13 @@ impl DownloadClient {
 
 /// Long-polls Telegram until the process is stopped.
 pub async fn run(config: Arc<Config>, token: String, thumbs: Arc<Thumbnailer>) {
-    let bot = Bot::new(token);
+    let bot = match make_bot(token, config.bot_api_url.as_deref()) {
+        Ok(bot) => bot,
+        Err(err) => {
+            log::error!("the bot is disabled: {err}");
+            return;
+        }
+    };
     let downloads = match DownloadClient::new() {
         Ok(client) => client,
         Err(err) => {
@@ -80,6 +90,26 @@ pub async fn run(config: Arc<Config>, token: String, thumbs: Arc<Thumbnailer>) {
         .build()
         .dispatch()
         .await;
+}
+
+/// A bot talking to api.telegram.org, or to the local Bot API server at
+/// `api_url`.
+fn make_bot(token: String, api_url: Option<&str>) -> Result<Bot, String> {
+    let Some(api_url) = api_url else {
+        return Ok(Bot::new(token));
+    };
+
+    let url = reqwest::Url::parse(api_url).map_err(|err| format!("invalid BOT_API_URL `{api_url}`: {err}"))?;
+    // A local server answers `getFile` only once it has fetched the whole file
+    // from Telegram, which for a 2 GB video takes far longer than the default
+    // 17 s deadline.
+    let client = teloxide::net::default_reqwest_settings()
+        .timeout(Duration::from_secs(60 * 60))
+        .build()
+        .map_err(|err| format!("could not create the bot client: {err}"))?;
+
+    log::info!("using the local Bot API server at {url}");
+    Ok(Bot::with_client(token, client).set_api_url(url))
 }
 
 async fn on_command(bot: Bot, message: Message, command: Command, config: Arc<Config>) -> ResponseResult<()> {
@@ -115,10 +145,24 @@ async fn on_message(
         return Ok(());
     };
 
-    let Some((kind, file_id, unique_id)) = media_file(&common.media_kind) else {
+    let Some((kind, file_id, unique_id, size)) = media_file(&common.media_kind) else {
         log::debug!("skipping unsupported media kind");
         return Ok(());
     };
+
+    // Saves a round trip that would only end in "Bad Request: file is too big".
+    if config.bot_api_url.is_none() && size > PUBLIC_API_MAX_DOWNLOAD {
+        log::warn!("{kind} of {size} bytes is over the public Bot API's 20 MB download limit");
+        let reply = format!(
+            "failed to save {kind}: it is {} MB, and Telegram lets bots download only up to 20 MB. \
+             Set BOT_API_URL to a local Bot API server to save files up to 2 GB.",
+            size / (1024 * 1024)
+        );
+        if let Err(err) = bot.send_message(message.chat.id, reply).await {
+            log::error!("failed to send the reply: {err}");
+        }
+        return Ok(());
+    }
 
     let reply = match save_file(&bot, &downloads, &config.save_dir, kind, &file_id, &unique_id).await {
         Ok(path) => {
@@ -145,7 +189,7 @@ async fn on_message(
 }
 
 /// Picks the downloadable file out of a message, if the message carries one.
-fn media_file(media: &MediaKind) -> Option<(&'static str, FileId, FileUniqueId)> {
+fn media_file(media: &MediaKind) -> Option<(&'static str, FileId, FileUniqueId, u32)> {
     let (kind, meta) = match media {
         MediaKind::Photo(m) => {
             // Telegram sends the same photo in several sizes; keep only the largest one.
@@ -162,7 +206,7 @@ fn media_file(media: &MediaKind) -> Option<(&'static str, FileId, FileUniqueId)>
         _ => return None,
     };
 
-    Some((kind, meta.id.clone(), meta.unique_id.clone()))
+    Some((kind, meta.id.clone(), meta.unique_id.clone(), meta.size))
 }
 
 async fn save_file(
@@ -187,9 +231,17 @@ async fn save_file(
 
     // Download into a temporary name so an interrupted transfer never leaves a truncated file.
     let partial = media::with_partial_suffix(&destination);
-    let mut writer = BufWriter::new(fs::File::create(&partial).await?);
-    teloxide::net::download_file(&downloads.0, bot.api_url(), bot.token(), &file.path, &mut writer).await?;
-    writer.flush().await?;
+    let source = Path::new(&file.path);
+    if source.is_absolute() {
+        // A local Bot API server (`--local`) has already downloaded the file
+        // and returns where it put it on disk instead of a URL path; it does
+        // not serve files over HTTP. Its data directory must be mounted here.
+        fs::copy(source, &partial).await.map_err(|err| format!("could not copy {}: {err}", source.display()))?;
+    } else {
+        let mut writer = BufWriter::new(fs::File::create(&partial).await?);
+        teloxide::net::download_file(&downloads.0, bot.api_url(), bot.token(), &file.path, &mut writer).await?;
+        writer.flush().await?;
+    }
     fs::rename(&partial, &destination).await?;
 
     Ok(destination)
@@ -225,6 +277,7 @@ mod tests {
             max_upload_bytes: 1,
             bot_token: None,
             web_url: web_url.map(str::to_owned),
+            bot_api_url: None,
         }
     }
 

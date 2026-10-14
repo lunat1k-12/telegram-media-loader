@@ -59,6 +59,7 @@ mod tests {
             max_upload_bytes: 1,
             bot_token: None,
             web_url: web_url.map(str::to_owned),
+            bot_api_url: None,
         }
     }
 

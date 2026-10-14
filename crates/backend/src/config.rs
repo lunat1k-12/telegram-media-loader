@@ -36,6 +36,10 @@ pub struct Config {
     /// cannot see the address clients use — behind a reverse proxy, or in a
     /// container, where the detected address is the container's own.
     pub web_url: Option<String>,
+    /// A self-hosted Bot API server (`telegram-bot-api --local`) to talk to
+    /// instead of api.telegram.org. The public API refuses to hand out files
+    /// over 20 MB; a local server goes up to 2 GB.
+    pub bot_api_url: Option<String>,
 }
 
 impl Config {
@@ -65,7 +69,23 @@ impl Config {
             .map(|url| url.trim().trim_end_matches('/').to_owned())
             .filter(|url| !url.is_empty());
 
-        Ok(Config { save_dir, thumb_dir, ffmpeg_bin, bind, frontend_dir, max_upload_bytes, bot_token, web_url })
+        let bot_api_url = env::var("BOT_API_URL")
+            .or_else(|_| env::var("TELOXIDE_API_URL"))
+            .ok()
+            .map(|url| url.trim().to_owned())
+            .filter(|url| !url.is_empty());
+
+        Ok(Config {
+            save_dir,
+            thumb_dir,
+            ffmpeg_bin,
+            bind,
+            frontend_dir,
+            max_upload_bytes,
+            bot_token,
+            web_url,
+            bot_api_url,
+        })
     }
 }
 
