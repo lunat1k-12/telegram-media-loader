@@ -12,8 +12,8 @@ use axum::routing::get;
 use axum::{Json, Router};
 use serde::Deserialize;
 use shared::{
-    ApiError, DEFAULT_PER_PAGE, MAX_PER_PAGE, MediaCategory, MediaPage, PowerStatus, SortOrder, UploadFailure,
-    UploadResponse, encode_path_segment,
+    ApiError, DEFAULT_PER_PAGE, MAX_PER_PAGE, MediaCategory, MediaItem, MediaPage, PowerStatus, SortOrder,
+    UploadFailure, UploadResponse, encode_path_segment,
 };
 use tokio::fs;
 use tokio::io::{AsyncWriteExt, BufWriter};
@@ -44,6 +44,7 @@ pub fn router(config: Arc<Config>, power: StatusHandle, thumbs: Arc<Thumbnailer>
         .route("/media", get(list_media).post(upload_media))
         .route("/media/{name}", get(get_media).delete(delete_media))
         .route("/media/{name}/thumbnail", get(get_thumbnail))
+        .route("/random", get(random_media))
         .route("/power", get(power_status))
         .route("/health", get(health))
         // Uploads are streamed straight to disk, so the in-memory body limit
@@ -105,6 +106,25 @@ async fn list_media(
 
     let page = media::list(&state.config.save_dir, &request).await?;
     Ok(Json(page))
+}
+
+#[derive(Debug, Deserialize)]
+struct RandomParams {
+    count: Option<u32>,
+    /// Same values as for the listing; anything else means "all".
+    kind: Option<String>,
+}
+
+/// A random sample of files, for the picture wall.
+async fn random_media(
+    State(state): State<AppState>,
+    Query(params): Query<RandomParams>,
+) -> Result<Json<Vec<MediaItem>>, ApiFailure> {
+    let count = params.count.unwrap_or(1).clamp(1, MAX_PER_PAGE) as usize;
+    let category = params.kind.as_deref().and_then(MediaCategory::parse);
+
+    let items = media::random(&state.config.save_dir, category, count).await?;
+    Ok(Json(items))
 }
 
 #[derive(Debug, Deserialize)]

@@ -1,7 +1,7 @@
 //! Thin wrappers over the backend's JSON endpoints.
 
 use gloo_net::http::Request;
-use shared::{ApiError, MediaPage, PowerStatus, UploadResponse};
+use shared::{ApiError, MediaCategory, MediaItem, MediaPage, PowerStatus, UploadResponse};
 use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::Closure;
 use wasm_bindgen_futures::JsFuture;
@@ -18,6 +18,20 @@ pub async fn fetch_page(query: &Query) -> Result<MediaPage, String> {
         return Err(error_message(response).await);
     }
     response.json::<MediaPage>().await.map_err(|err| format!("unexpected response: {err}"))
+}
+
+/// Up to `count` distinct files picked at random by the server.
+pub async fn fetch_random(count: usize, kind: Option<MediaCategory>) -> Result<Vec<MediaItem>, String> {
+    let mut url = format!("/api/random?count={count}");
+    if let Some(kind) = kind {
+        url.push_str(&format!("&kind={}", kind.as_str()));
+    }
+    let response = Request::get(&url).send().await.map_err(|err| format!("request failed: {err}"))?;
+
+    if !response.ok() {
+        return Err(error_message(response).await);
+    }
+    response.json::<Vec<MediaItem>>().await.map_err(|err| format!("unexpected response: {err}"))
 }
 
 /// Deletes one file. A file that is already gone counts as deleted.

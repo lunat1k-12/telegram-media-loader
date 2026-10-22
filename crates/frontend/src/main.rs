@@ -11,6 +11,7 @@ mod state;
 mod toolbar;
 mod uploader;
 mod viewer;
+mod wall;
 
 use leptos::prelude::*;
 use wasm_bindgen_futures::spawn_local;
@@ -20,10 +21,19 @@ use crate::state::AppState;
 use crate::toolbar::{Masthead, Toolbar};
 use crate::uploader::Uploader;
 use crate::viewer::Viewer;
+use crate::wall::Wall;
 
 fn main() {
     console_error_panic_hook::set_once();
-    leptos::mount::mount_to_body(App);
+
+    // Two pages only, so a path check stands in for a router. The backend
+    // serves `index.html` for any unknown path, which is what lets `/wall` load.
+    let path = web_sys::window().and_then(|w| w.location().pathname().ok()).unwrap_or_default();
+    if path.trim_end_matches('/') == "/wall" {
+        leptos::mount::mount_to_body(Wall);
+    } else {
+        leptos::mount::mount_to_body(App);
+    }
 }
 
 #[component]

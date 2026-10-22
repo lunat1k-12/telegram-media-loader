@@ -4,6 +4,7 @@
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use rand::seq::SliceRandom;
 use shared::{MAX_PER_PAGE, MediaCategory, MediaItem, MediaPage, SortOrder};
 use tokio::fs;
 
@@ -99,31 +100,8 @@ pub async fn delete(save_dir: &Path, name: &str) -> Result<(), MediaError> {
 /// thousands of files a bot inbox realistically holds; if it ever stops being
 /// fine, this is the function to put an index in front of.
 pub async fn list(save_dir: &Path, request: &ListRequest) -> Result<MediaPage, MediaError> {
-    let mut all = Vec::new();
-    let mut total_bytes = 0u64;
-
-    let mut entries = fs::read_dir(save_dir).await?;
-    while let Some(entry) = entries.next_entry().await? {
-        let name = entry.file_name().to_string_lossy().into_owned();
-        if validate_name(&name).is_err() {
-            continue;
-        }
-
-        let metadata = match entry.metadata().await {
-            Ok(metadata) if metadata.is_file() => metadata,
-            // A file removed between read_dir and stat is simply not listed.
-            _ => continue,
-        };
-
-        total_bytes += metadata.len();
-        all.push(MediaItem {
-            category: MediaCategory::from_file_name(&name),
-            mime: mime_guess::from_path(&name).first_or_octet_stream().to_string(),
-            size: metadata.len(),
-            modified_ms: modified_ms(&metadata),
-            name,
-        });
-    }
+    let mut all = scan(save_dir).await?;
+    let total_bytes = all.iter().map(|item| item.size).sum();
 
     let total_unfiltered = all.len() as u64;
 
@@ -154,6 +132,49 @@ pub async fn list(save_dir: &Path, request: &ListRequest) -> Result<MediaPage, M
     let items = all.into_iter().skip(start).take(per_page as usize).collect();
 
     Ok(MediaPage { items, page, per_page, total, total_pages, total_unfiltered, total_bytes })
+}
+
+/// Up to `count` distinct files picked at random, optionally of one category.
+pub async fn random(
+    save_dir: &Path,
+    category: Option<MediaCategory>,
+    count: usize,
+) -> Result<Vec<MediaItem>, MediaError> {
+    let mut all = scan(save_dir).await?;
+    all.retain(|item| category.is_none_or(|category| item.category == category));
+
+    let mut rng = rand::rng();
+    let (picked, _) = all.partial_shuffle(&mut rng, count);
+    Ok(picked.to_vec())
+}
+
+/// Every listable file in `save_dir`, in directory order.
+async fn scan(save_dir: &Path) -> Result<Vec<MediaItem>, MediaError> {
+    let mut all = Vec::new();
+
+    let mut entries = fs::read_dir(save_dir).await?;
+    while let Some(entry) = entries.next_entry().await? {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if validate_name(&name).is_err() {
+            continue;
+        }
+
+        let metadata = match entry.metadata().await {
+            Ok(metadata) if metadata.is_file() => metadata,
+            // A file removed between read_dir and stat is simply not listed.
+            _ => continue,
+        };
+
+        all.push(MediaItem {
+            category: MediaCategory::from_file_name(&name),
+            mime: mime_guess::from_path(&name).first_or_octet_stream().to_string(),
+            size: metadata.len(),
+            modified_ms: modified_ms(&metadata),
+            name,
+        });
+    }
+
+    Ok(all)
 }
 
 /// Describes one file, for the response to an upload.

@@ -37,6 +37,7 @@ pub fn Masthead() -> impl IntoView {
             <h1>"Media library"</h1>
             <span class="stats">{stats}</span>
             <span class="spacer"></span>
+            <a class="wall-link" href="/wall?rows=3&cols=3" target="_blank">"Picture wall"</a>
             <PowerIndicator />
         </header>
     }
