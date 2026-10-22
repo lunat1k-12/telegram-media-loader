@@ -669,7 +669,10 @@ select {
 
 .wall {
   position: fixed;
-  inset: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
   display: grid;
   gap: 4px;
   padding: 4px;
@@ -689,7 +692,10 @@ select {
 /* Keep in sync with FADE in crates/frontend/src/wall.rs. */
 .wall-layer {
   position: absolute;
-  inset: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
@@ -705,7 +711,10 @@ select {
 
 .wall-message {
   position: fixed;
-  inset: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
   display: grid;
   place-items: center;
   color: var(--text-dim);
